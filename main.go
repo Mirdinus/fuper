@@ -58,14 +58,14 @@ var promMaxSpeed = prometheus.NewGauge(prometheus.GaugeOpts{
 	Name:      "max_speed",
 })
 
-func loadData() []byte {
+func loadData() ([]byte, error) {
 
-	url := "http://"
+	url := "http://212.27.205.129/"
 	re := strings.NewReplacer("<!--", "", "-->", "", "\n", "")
 
 	res, err := http.Get(url)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
 	defer res.Body.Close()
@@ -117,23 +117,30 @@ func loadData() []byte {
 	jsonMapAsStringFormat, _ := json.Marshal(msg)
 
 	log.Println("Data loaded")
-	return jsonMapAsStringFormat
+	return jsonMapAsStringFormat, nil
 }
 
-var toReturn []byte
+var fuperData []byte
+
+func load() {
+	toReturn, err := loadData()
+	if err != nil {
+		log.Println(err)
+	}
+	fuperData = toReturn
+}
 
 func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Data requested via HTTP")
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(toReturn)
+		w.Write(fuperData)
 	})
 
 	ticker := time.NewTicker(10 * time.Minute)
 
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, syscall.SIGINT, syscall.SIGTERM)
-
-	toReturn = loadData()
 
 	prometheus.MustRegister(promPerc)
 	prometheus.MustRegister(promCanTran)
@@ -147,10 +154,12 @@ func main() {
 			case <-done:
 				os.Exit(1)
 			case <-ticker.C:
-				toReturn = loadData()
+				load()
 			}
 		}
 	}()
+
+	load()
 
 	log.Println("Server started")
 	http.Handle("/metrics", promhttp.Handler())
